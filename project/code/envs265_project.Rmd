@@ -148,5 +148,7 @@ mines %>% #count mines by mineral
   group_by(CRITICAL_MINERAL) %>%
   summarize(count=n()) %>%
   arrange(desc(count))
+
+#TESTINGGG
 ```
 

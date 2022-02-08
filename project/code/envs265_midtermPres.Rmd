@@ -1,0 +1,230 @@
+---
+title: 'A geospatial analysis of energy transition mining in the U.S.'
+author: "Carrie Hamilton"
+date: "`r Sys.Date()`"
+output: 
+  ioslides_presentation:
+    widescreen: yes
+    df_print: paged
+    highlight: "pygments"
+    css: slides.css
+  
+
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(pacman)
+p_load(sf,tidyverse,usmap,ggplot2,plotly,tidycensus,flair)
+```
+
+
+```{css, echo=FALSE}
+.code-format {
+  background-color: white;
+  border: 3px solid blue;
+}
+```
+
+
+
+```{r data, include=FALSE}
+#mines in U.S.
+minesRaw <- st_read("data/mrdata_usgs_PP1802_Global_CriticalMinerals.gdb", "PP1802_CritMin_pts") %>%
+  filter(LOCATION=="United States of America") %>%
+  filter(LOC_DETAIL!="Alaska" & LOC_DETAIL!="Hawaii")
+
+#base map
+state <- map_data("state")
+```
+
+
+## Background {.flexbox .vcenter}
+
+- EV's, wind turbines, solar panels are mineral-intensive
+- several of these minerals are considered "critical" 
+- U.S. rapidly expanding mining for "green" technologies
+- mining: H20-intensive, toxic wastes that degrade water, air, soil
+
+## {.flexbox .vcenter}
+what <b>social + environmental dilemmas</b> emerge from the <b>expanding energy transition mining frontier</b> in the U.S.?
+
+## Guiding questions {.flexbox .vcenter}
+
+(1) where are energy transition mineral mines + deposits located?
+(2) who lives in vicinity to them?
+
+## Data {.flexbox .vcenter}
+- <b>USGS:</b> distribution of mines + deposits for 22 "critical minerals" (2017)
+- <b>Census:</b> geographic boundary TIGER/Line shapefiles (counties, blocks, reservations + off-reservation trust lands)
+- <b>Census:</b> demographics (population size, income, race)
+
+
+## {.smaller}
+```{r mappingCodeOld, echo=TRUE, results="hide", class.source = "code-format"}
+map0 <- ggplot() + 
+  geom_polygon(data=state, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_point(data=minesRaw, #add mines
+             aes(x=LONGITUDE, y=LATITUDE, color=CRITICAL_MINERAL)) +
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(), 
+        axis.text.x=element_blank(), 
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank()) + 
+  ggtitle('"Critical Mineral" Mines & Deposits in U.S.') + #title
+  coord_fixed(1.3) #adjust aspect ratio
+
+ggplotly(map0)  #make interactive
+```
+---
+```{r mappingOld, echo=FALSE}
+ggplotly(map0)
+```
+<font size="3">data: USGS 2017</font>
+
+
+## {.smaller}
+```{r mappingCode, echo=FALSE, results="hide"}
+map1 <- ggplot() + 
+  geom_polygon(data=state, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_point(data=minesRaw, #add mines
+             aes(x=LONGITUDE, y=LATITUDE, color=CRITICAL_MINERAL,
+                 text=paste("",CRITICAL_MINERAL))) +
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(), 
+        axis.text.x=element_blank(), 
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank()) + 
+  ggtitle('"Critical Mineral" Mines & Deposits in U.S.') + #title
+  coord_fixed(1.3) #adjust aspect ratio
+
+ggplotly(map1, tooltip="text") %>% #make interactive
+  style(hoverinfo="none", traces=1)
+```
+
+```{r, echo = FALSE}
+decorate("mappingCode") %>% 
+  flair('text=paste("",CRITICAL_MINERAL)') %>%
+  flair('tooltip="text"') %>%
+  flair('style(hoverinfo="none", traces=1)') %>%
+  knit_print.with_flair()
+  
+```
+
+
+---
+```{r mapping, echo=FALSE}
+ggplotly(map1, tooltip="text") %>% #make interactive
+  style(hoverinfo="none", traces=1)
+```
+<font size="3">data: USGS 2017</font>
+
+
+## {.smaller}
+```{r unique, class.source = "code-format"}
+unique(minesRaw$CRITICAL_MINERAL) %>% 
+  as_tibble()
+```
+
+## {.smaller}
+```{r filtering, class.source = "code-format"}
+mines <- minesRaw %>% #filter to key energy transition minerals
+  filter (CRITICAL_MINERAL %in% c("Aluminum",
+                                  "Cadmium",
+                                  "Cobalt",
+                                  "Copper",
+                                  "Dysprosium",
+                                  "Gallium",
+                                  "Indium",
+                                  "Lithium",
+                                  "Manganese",
+                                  "Neodymium",
+                                  "Nickel",
+                                  "Silver",
+                                  "Selenium",
+                                  "Tellerium",
+                                  "Rare-Earth Elements"))
+```
+
+## {.smaller}
+```{r mappingCode2, echo=TRUE, results="hide",class.source = "code-format"}
+map2 <- ggplot() + 
+  geom_polygon(data=state, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_point(data=mines, #add mines
+             aes(x=LONGITUDE, y=LATITUDE, color=CRITICAL_MINERAL,
+                 text=paste("",CRITICAL_MINERAL))) +
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(), 
+        axis.text.x=element_blank(), 
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank()) + 
+  ggtitle('"Critical Mineral" Mines & Deposits in U.S.:<br>Cobalt, Gallium, Lithium, Manganese, Indium') +
+  coord_fixed(1.3) #adjust aspect ratio
+
+ggplotly(map2, tooltip="text") %>% #make interactive
+  style(hoverinfo="none", traces=1)
+```
+
+---
+```{r mapping2, echo=FALSE}
+ggplotly(map2, tooltip="text") %>% #make interactive
+  style(hoverinfo="none", traces=1)
+```
+<font size="3">data: USGS 2017</font>
+
+## {.smaller}
+```{r summary, class.source = "code-format", rownames.print=FALSE}
+mines %>% #count mines by mineral
+  as_tibble() %>%
+  select(CRITICAL_MINERAL) %>%
+  group_by(CRITICAL_MINERAL) %>%
+  summarize(count=n()) %>%
+  arrange(desc(count))
+```
+
+## Next steps
+
+<b>Q1: where are energy transition mineral mines + deposits located?</b>
+
+- additional mine/deposit data for aluminum, cadmium, copper, dysprosium, nickel, silver
+- additional data wrangling
+
+## Next steps
+
+<b>Q2: who lives in vicinity to them?</b>
+
+- join demographic data to geographic boundary data using `tidycensus` package
+- draw buffers around mines using `st_buffer()`
+- select all census blocks or county polygons within buffer using `st_intersects()`
+- calculate demographics (sum populations, mean/median income, racial composition) in blocks/counties within or intersecting buffer
+- draw buffers around reservations using `st_buffer()`
+- select mines within buffer; create new 0/1 variable for mines that are vs. are not within particular distance of reservation
+
+## Possible final products
+- map of mine points sized according to population in proximity to mine
+- map of mines that fall within particular distance of reservations
+- choropleth map of income in counties surrounding mines
+- choropleth maps of race in counties surrounding mines
+- map of mine points showing difference in mean income between state as a whole and counties surrounding mine
+
+## If there's time...
+- map of land cover surrounding mines
+- tool to scrape twitter data (tweets mentioning particular minerals, energy transition, etc.)

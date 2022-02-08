@@ -1,0 +1,152 @@
+---
+title: 'A geospatial analysis of energy transition mining in the U.S.'
+author: "Carrie Hamilton"
+date: "`r Sys.Date()`"
+output: 
+  ioslides_presentation:
+    widescreen: yes
+    df_print: paged
+    highlight: "pygments"
+    css: slides.css
+  
+
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(pacman)
+p_load(sf,tidyverse,usmap,ggplot2,plotly,tidycensus,flair)
+```
+
+
+```{css, echo=FALSE}
+.code-format {
+  background-color: white;
+  border: 3px solid blue;
+}
+```
+
+
+
+```{r data, include=FALSE}
+#mines in U.S.
+minesRaw <- st_read("data/mrdata_usgs_PP1802_Global_CriticalMinerals.gdb", "PP1802_CritMin_pts") %>%
+  filter(LOCATION=="United States of America") %>%
+  filter(LOC_DETAIL!="Alaska" & LOC_DETAIL!="Hawaii")
+
+#base map
+state <- map_data("state")
+```
+
+
+## {.smaller}
+```{r mappingCode, echo=FALSE, results="hide"}
+map1 <- ggplot() + 
+  geom_polygon(data=state, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_point(data=minesRaw, #add mines
+             aes(x=LONGITUDE, y=LATITUDE, color=CRITICAL_MINERAL,
+                 text=paste("",CRITICAL_MINERAL))) +
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(), 
+        axis.text.x=element_blank(), 
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank()) + 
+  ggtitle('"Critical Mineral" Mines & Deposits in U.S.') + #title
+  coord_fixed(1.3) #adjust aspect ratio
+
+ggplotly(map1, tooltip="text") %>% #make interactive
+  style(hoverinfo="none", traces=1)
+```
+
+```{r, echo = FALSE}
+decorate("mappingCode") %>% 
+  flair('text=paste("",CRITICAL_MINERAL)') %>%
+  flair('tooltip="text"') %>%
+  flair('style(hoverinfo="none", traces=1)') %>%
+  knit_print.with_flair()
+  
+```
+
+
+---
+```{r mapping, echo=FALSE}
+ggplotly(map1, tooltip="text") %>% #make interactive
+  style(hoverinfo="none", traces=1)
+```
+<font size="3">data: USGS 2017</font>
+
+
+## {.smaller}
+```{r unique, class.source = "code-format"}
+unique(minesRaw$CRITICAL_MINERAL) %>% 
+  as_tibble()
+```
+
+## {.smaller}
+```{r filtering, class.source = "code-format"}
+mines <- minesRaw %>% #filter to key energy transition minerals
+  filter (CRITICAL_MINERAL %in% c("Aluminum",
+                                  "Cadmium",
+                                  "Cobalt",
+                                  "Copper",
+                                  "Dysprosium",
+                                  "Gallium",
+                                  "Indium",
+                                  "Lithium",
+                                  "Manganese",
+                                  "Neodymium",
+                                  "Nickel",
+                                  "Silver",
+                                  "Selenium",
+                                  "Tellerium",
+                                  "Rare-Earth Elements"))
+```
+
+## {.smaller}
+```{r mappingCode2, echo=TRUE, results="hide",class.source = "code-format"}
+map2 <- ggplot() + 
+  geom_polygon(data=state, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_point(data=mines, #add mines
+             aes(x=LONGITUDE, y=LATITUDE, color=CRITICAL_MINERAL,
+                 text=paste("",CRITICAL_MINERAL))) +
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(), 
+        axis.text.x=element_blank(), 
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(), 
+        axis.text.y=element_blank(), 
+        axis.ticks.y=element_blank()) + 
+  ggtitle('"Critical Mineral" Mines & Deposits in U.S.:<br>Cobalt, Gallium, Lithium, Manganese, Indium') +
+  coord_fixed(1.3) #adjust aspect ratio
+
+ggplotly(map2, tooltip="text") %>% #make interactive
+  style(hoverinfo="none", traces=1)
+```
+
+---
+```{r mapping2, echo=FALSE}
+ggplotly(map2, tooltip="text") %>% #make interactive
+  style(hoverinfo="none", traces=1)
+```
+<font size="3">data: USGS 2017</font>
+
+## {.smaller}
+```{r summary, class.source = "code-format", rownames.print=FALSE}
+mines %>% #count mines by mineral
+  as_tibble() %>%
+  select(CRITICAL_MINERAL) %>%
+  group_by(CRITICAL_MINERAL) %>%
+  summarize(count=n()) %>%
+  arrange(desc(count))
+```
+

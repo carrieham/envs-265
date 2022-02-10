@@ -3,7 +3,7 @@ title: 'A geospatial analysis of energy transition mining in the U.S.'
 author: "Carrie Hamilton"
 date: "`r Sys.Date()`"
 output: 
-  ioslides_presentation:
+  html_document:
     widescreen: yes
     df_print: paged
     highlight: "pygments"
@@ -36,6 +36,17 @@ minesRaw <- st_read("data/mrdata_usgs_PP1802_Global_CriticalMinerals.gdb", "PP18
 
 #base map
 state <- map_data("state")
+
+#census
+census_api_key("7492e696e8c0d9bcb8a075682c4dd9e68aad700a", install=TRUE, overwrite=TRUE)
+
+variables <- load_variables(2019, "acs1", cache=TRUE)
+countyData <- get_acs(geography = "county", 
+                       variables = "B01003_001", 
+                       year = 2019, 
+                       geometry=TRUE)
+
+head(countyData)
 ```
 
 
@@ -104,7 +115,7 @@ mines <- minesRaw %>% #filter to key energy transition minerals
                                   "Nickel",
                                   "Silver",
                                   "Selenium",
-                                  "Tellerium",
+                                  "Tellurium",
                                   "Rare-Earth Elements"))
 ```
 

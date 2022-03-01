@@ -1,6 +1,6 @@
 
 library(pacman)
-p_load(tidyverse,tmap,sf)
+p_load(tidyverse,sf,tmap)
 
 
 fahr_to_kelvin <- function(temp) {
@@ -261,3 +261,144 @@ ggplot(pop_eps_tbl, aes(lynx, hare, color=time)) +
 #recommended to safe images as png (raster)--it's uncompressed. vs. jpeg which is compressed. easier to go from uncompressed to compressed.
 #pdf for vector data.
 mpas_westcoast <- st_read("data/shapefiles/mpas_westcoast.shp")
+
+ggplot(mpas_westcoast) +
+  geom_sf(aes(fill = State)) +
+  ggtitle("Marine Protected Areas on the West Coast") +
+  labs(x = "longitude", y = "latitude")
+
+mpas_area <- mpas_westcoast %>%
+  select(State, Site_ID, Shape_Area) %>%
+  group_by(State) %>%
+  summarize(sum = sum(Shape_Area)) %>%
+  arrange(desc(sum)) # rank
+
+mpas_area[[1]][1]
+
+
+#raster
+list_files <- list.files("data/raster/", pattern = "average_", full.names = TRUE)
+list_rasters <- map(list_files, raster::raster) # map functions to a list
+
+raster::plot(list_rasters[[1]],
+             main = "Average Sea Surface Temperature 2008 (K)",
+             xlab = "Longitude (deg)",
+             ylab = "Latitude (deg)"
+)
+
+raster::plot(list_rasters[[2]],
+             main = "Average Sea Surface Temperature 2009 (K)",
+             xlab = "Longitude (deg)",
+             ylab = "Latitude (deg)"
+)
+
+raster::plot(list_rasters[[3]],
+             main = "Average Sea Surface Temperature 2010 (K)",
+             xlab = "Longitude (deg)",
+             ylab = "Latitude (deg)"
+)
+
+raster::plot(list_rasters[[4]],
+             main = "Average Sea Surface Temperature 2011 (K)",
+             xlab = "Longitude (deg)",
+             ylab = "Latitude (deg)"
+)
+
+raster::plot(list_rasters[[5]],
+             main = "Average Sea Surface Temperature 2012 (K)",
+             xlab = "Longitude (deg)",
+             ylab = "Latitude (deg)"
+)
+
+get_values <- function(x) {
+  min_val <- raster::minValue(x)
+  max_val <- raster::maxValue(x)
+  tibble(min_val, max_val)
+}
+
+summaries_minmax <- map_df(list_rasters, get_values) %>% # again, this is to map a function to a list
+  mutate(year = c(2008, 2009, 2010, 2011, 2012))
+
+summaries_minmax %>%
+  pivot_longer(min_val:max_val, names_to = "minmax", values_to = "sst") %>%
+  mutate(minmax = case_when(
+    minmax == "max_val" ~ "Maximum SST",
+    minmax == "min_val" ~ "Minimum SST"
+  )) %>%
+  ggplot(aes(x = sst)) +
+  geom_histogram() +
+  facet_grid(rows = vars(minmax)) +
+  labs(x = "Annual Sea Surface Temperature (K)")
+
+avg_ssts <- raster::stack(list_rasters)
+raster::plot(avg_ssts, xlab = "Longitude (deg)", ylab = "Latitude (deg)")
+
+
+
+#raster calculations
+kelvin_celsius <- function(kelvin) {
+  celsius <- kelvin - 273.15
+  celsius
+}
+
+avg_cel <- raster::calc(avg_ssts, kelvin_celsius)
+avg_sst <- raster::mean(avg_cel)
+
+avg_sst %>%
+  na.omit() %>%
+  raster::plot(main = "Average Annual Sea Surface Temperature 2008-2012 (C)", xlab = "Longitude (deg)", ylab = "Latitude (deg)")
+
+npp <- raster::raster("data/raster/annual_npp.tif")
+raster::plot(npp, main = "Net Primary Productivity (mgC/m2/day)", xlab = "Easting (m)", ylab = "Northing (m)")
+
+raster::crs(avg_sst)
+
+raster::crs(npp)
+
+st_crs(mpas_westcoast)
+
+npp_crs <- raster::crs(npp, asText = TRUE)
+projected_avg <- raster::projectRaster(avg_sst, crs = npp_crs)
+sp::identicalCRS(npp, projected_avg)
+
+raster::crs(avg_sst)
+
+raster::crs(npp)
+
+st_crs(mpas_westcoast)
+
+npp_crs <- raster::crs(npp, asText = TRUE)
+projected_avg <- raster::projectRaster(avg_sst, crs = npp_crs)
+sp::identicalCRS(npp, projected_avg)
+
+npp_avg_stack <- raster::stack(projected_avg, npp)
+raster::plot(npp_avg_stack, main = c("Average SST (C)", "NPP (mgC/m2/day)"), xlab = "Easting (m)", ylab = "Northing (m)")
+
+westcoast_sample <- st_sample(mpas_westcoast, size = 1000) %>%
+  st_sf() %>%
+  st_join(mpas_westcoast)
+
+sample_data <- raster::extract(npp_avg_stack, westcoast_sample) %>%
+  as_tibble()
+
+westcoast_data <- westcoast_sample %>%
+  mutate(
+    average_annual_sst = sample_data$layer,
+    annual_npp = sample_data$annual_npp
+  )
+
+filtered_data <- westcoast_data %>%
+  filter(average_annual_sst < 18, average_annual_sst > 12) %>%
+  filter(annual_npp >= 2.6, annual_npp <= 3)
+
+nrow(filtered_data) / nrow(westcoast_data)
+
+filtered_data$geometry
+
+st_bbox(filtered_data)
+
+raster::plot(npp_avg_stack[[2]], main = "Suitable Lumpsucker Habitat over NPP (mgC/m2/day)", xlab = "(m)", ylab = "(m)")
+raster::plot(filtered_data, col = 10, add = T)
+
+raster::plot(npp_avg_stack[[1]], main = "Suitable Lumpsucker Habitat over Average SST (C)", xlab = "(m)", ylab = "(m)")
+raster::plot(filtered_data, col = 10, add = T)

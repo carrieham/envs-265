@@ -8,110 +8,276 @@ output:
     df_print: paged
     highlight: "pygments"
     css: slides.css
-  
 
 ---
 
 ```{r setup, include=FALSE, echo=FALSE}
+
+###############################################
+###############SET-UP########################
+###############################################
+
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 library(pacman)
-p_load(sf,tidyverse,usmap,ggplot2,plotly,tidycensus,flair,styler,devtools)
+p_load(sf,tidyverse,usmap,ggplot2,plotly,tidycensus,flair,styler,devtools,scales)
+remotes::install_github("walkerke/tidycensus")
+library(tidyverse)
 # install_github("ateucher/rmapshaper")
 # library(rmapshaper)
 ```
 
 
-```{css, echo=FALSE}
-.code-format {
-  background-color: white;
-  border: 3px solid blue;
-}
-```
+```{r prelimData, include=FALSE}
 
+###############################################
+###############PRELIM DATA##################
+###############################################
 
-
-```{r data, include=FALSE}
-#mines in U.S.
+###mines in U.S.
 minesRaw <- st_read("data/mrdata_usgs_PP1802_Global_CriticalMinerals.gdb", "PP1802_CritMin_pts") %>%
   filter(LOCATION=="United States of America") %>%
-  filter(LOC_DETAIL!="Alaska" & LOC_DETAIL!="Hawaii")
-
-#base map
-state <- map_data("state")
-
-#census
-census_api_key("7492e696e8c0d9bcb8a075682c4dd9e68aad700a", install=TRUE, overwrite=TRUE)
-
-variables <- load_variables(2019, "acs1", cache=TRUE)
-county <- get_acs(geography = "county", 
-                       variables = "B01003_001", 
-                       year = 2019, 
-                       geometry=TRUE) %>%
-  separate(NAME,into=c("County","State"),sep=", ") %>%
-  filter(State!="Alaska" & State!="Hawaii") %>%
+  filter(LOC_DETAIL!="Alaska" & LOC_DETAIL!="Hawaii") %>% 
   st_transform(crs=4326)
 
-# county_simpl <- county %>%
-#   st_simplify(preserveTopology =TRUE, dTolerance=10) %>%
-#   st_cast("MULTIPOLYGON")
+# ##USMIN #mines in U.S.
+# minesRaw_USMIN <- st_read("data/mrds_usgs_mines/mrds-trim.shp") %>%
+#   filter(DEV_STAT %in% c("Producer","Occurence")) %>%
+#   filter(grepl("REE|LI|CO|TE",CODE_LIST))
+
 # 
-# county_simpl2 <- ms_simplify(county, keep = 0.001,
-#                                 keep_shapes = FALSE)
-# 
-# round(c(object.size(county), object.size(county_simpl), object.size(county_simpl2))/1024)
+# #%>%
+#   filter(LOCATION=="United States of America") %>%
+#   filter(LOC_DETAIL!="Alaska" & LOC_DETAIL!="Hawaii") %>% 
+#   st_transform(crs=4326)
 
-variables2 <- load_variables(2010, "sf1", cache=TRUE)
-
-#block data not available in acs
-blocks <- get_decennial(geography = "block", 
-                       variables = "P001001", 
-                       state="NC",
-                       year = 2010,
-                       geometry=TRUE) 
-
-tracts <- get_decennial(geography = "tract", 
-                       variables = "P001001", 
-                       state="NC",
-                       year = 2010,
-                       geometry=TRUE) 
-
-# %>%
-#   separate(NAME,into=c("County","State"),sep=", ") %>%
-#   filter(State!="Alaska" & State!="Hawaii")
-
-```
-
-
-## {.smaller}
-```{r filtering, class.source = "code-format"}
-mines <- minesRaw %>% #filter to key energy transition minerals
-  filter (CRITICAL_MINERAL %in% c("Aluminum",
-                                  "Cadmium",
-                                  "Cobalt",
-                                  "Copper",
-                                  "Dysprosium",
-                                  "Gallium",
-                                  "Indium",
-                                  "Lithium",
-                                  "Manganese",
-                                  "Neodymium",
-                                  "Nickel",
-                                  "Silver",
-                                  "Selenium",
-                                  "Tellurium",
-                                  "Rare-Earth Elements"))
-
-minesKeyMinerals <- minesRaw %>% #filter to key energy transition minerals
+###mines in U.S.  #cobalt, lithium, tellurium, rare earths
+minesKeyMinerals <- minesRaw %>% #filter to key  minerals
   filter (CRITICAL_MINERAL %in% c("Cobalt",
                                   "Lithium",
                                   "Tellurium",
-                                  "Rare-Earth Elements"))
+                                  "Rare-Earth Elements")) %>% 
+  st_transform(crs=4326)
+
+###create 35-mile buffer polygons around mines   #cobalt, lithium, tellurium, rare earths
+buffer <- st_buffer(minesKeyMinerals, dist = 56327) %>% #in meters
+  st_transform(crs=4326) 
+
+###U.S. base map
+base <- map_data("state")
+
+###census api key
+census_api_key("7492e696e8c0d9bcb8a075682c4dd9e68aad700a", install=TRUE, overwrite=TRUE)
+
+###ACS variables
+variablesACS <- load_variables(2019, "acs5", cache=TRUE)
+```
+
+```{r data}
+
+###############################################
+###############DATA##########################
+###############################################
+
+###state  #population,income,white
+state <- get_acs(geography = "state", 
+                       variables = c("B01003_001","B06011_001","B02001_002"), 
+                       year = 2019, 
+                       geometry=TRUE,
+                 output="wide") %>%
+  filter(NAME!="Alaska" & NAME!="Hawaii" & NAME!="Puerto Rico") %>%
+  rename(pop=B01003_001E,medIncome=B06011_001E,whitePop=B02001_002E,
+         popMOE=B01003_001M,medIncomeMOE=B06011_001M,whitePopMOE=B02001_002M) %>% 
+  st_transform(crs=4326) 
+
+###county  #population,income,white
+county <- get_acs(geography = "county", 
+                       variables = c("B01003_001","B06011_001","B02001_002"), 
+                       year = 2019, 
+                       geometry=TRUE,
+                  output="wide") %>%
+  separate(NAME,into=c("County","State"),sep=", ") %>%
+  filter(State!="Alaska" & State!="Hawaii" & State!="Puerto Rico") %>%
+    rename(pop=B01003_001E,medIncome=B06011_001E,whitePop=B02001_002E,
+           popMOE=B01003_001M,medIncomeMOE=B06011_001M,whitePopMOE=B02001_002M) %>%
+  st_transform(crs=4326)
+
+# ###place   #population
+# place_pop <- get_estimates(geography = "place", 
+#                            variables = "POP",
+#                            year=2019,
+#                            geometry=TRUE) %>%
+#   select(-variable) %>%
+#   rename(pop=value) %>%
+#  separate(NAME,into=c("place","state"),sep=", ") %>%
+#  filter(state!="Alaska" & state!="Hawaii" & state!="Puerto Rico") %>%
+#   st_transform(crs=4326)
+
+###place   #population,income,white
+place <- get_acs(geography = "place", 
+                       variables = c("B01003_001E", "B06011_001","B02001_002"), 
+                       year = 2019, 
+                       geometry=TRUE,
+                  output="wide") %>%
+  separate(NAME,into=c("County","State"),sep=", ") %>%
+  filter(State!="Alaska" & State!="Hawaii" & State!="Puerto Rico") %>%
+    rename(pop=B01003_001E,medIncome=B06011_001E,whitePop=B02001_002E,
+           popMOE=B01003_001M,medIncomeMOE=B06011_001M,whitePopMOE=B02001_002M) %>%
+  st_transform(crs=4326)
+```
+
+```{r function}
+
+mappingMines <- function(data1,data2,bufferDist,variable,operation) {
+  
+  ###base map
+  base <- map_data("state")
+  
+  ###create buffer polygons
+  buffer <- st_buffer(data1, dist = bufferDist) %>% #in meters
+  st_transform(crs=4326) 
+  
+  ###filter data 2 to buffer
+  intersecting <- st_intersection(data2, buffer) %>%
+  sf::st_cast("POINT")
+  
+  ###summarize data in buffer
+  inBuffer <- intersecting %>%
+  group_by(CRITICAL_MINERAL,DEPOSIT_NAME)
+
+  inBuffer <- eval(expr=(parse(text=(paste("summarize(inBuffer,",operation,"_",variable,"=" ,operation,"(",variable,"))",sep=""))))) %>%
+    st_centroid()
+ 
+  ###map
+  map <- ggplot() +
+  geom_polygon(data=base, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_sf(inBuffer,
+          mapping=aes(color=CRITICAL_MINERAL,size=parse(text=(paste(operation,"_",variable,sep=""))))) +
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle(paste(operation,"_",variable,sep=""))
+
+ggplotly(map)
+  
+}
+
+```
+
+```{r testing}
+
+###base map
+data1 <- minesKeyMinerals
+data2 <- place
+bufferDist <- 56327
+variable <- "pop"
+operation <- "sum" 
+
+base <- map_data("state")
+  
+###create buffer polygons
+buffer <- st_buffer(data1, dist = bufferDist) %>% #in meters
+st_transform(crs=4326) 
+
+###create place centroids
+placeCentroid <- place %>%
+  st_centroid() %>%
+  sf::st_cast("POINT")
+  
+###filter data 2 to buffer
+intersecting <- st_intersection(placeCentroid, buffer) 
+
+###summarize data in buffer
+inBuffer <- intersecting %>%
+  group_by(CRITICAL_MINERAL,DEPOSIT_NAME,LATITUDE,LONGITUDE)
+
+inBuffer <- eval(expr=(parse(text=(paste("summarize(inBuffer,result=",operation,"(",variable,"))",sep=""))))) 
+
+###map
+map <- ggplot() +
+  geom_polygon(data=base, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_point(inBuffer,
+          mapping=aes(x=LONGITUDE,y=LATITUDE,
+                      color=CRITICAL_MINERAL,size=result)) +
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle(paste(operation,"_",variable,sep=""))
+
+ggplotly(map)
+
+
+
+placeCentroid2 <- place %>%
+  st_centroid()
+
+intersectCentroid2 <- st_intersection(placeCentroid2, buffer)
+
+centroidsTotalGrouped2 <- intersectCentroid2 %>%
+  group_by(CRITICAL_MINERAL,DEPOSIT_NAME) %>%
+  summarize(population=sum(pop)) %>%
+  st_centroid()
+
+mapPlacePop2 <- ggplot() +
+  geom_polygon(data=base, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_point(centroidsTotalGrouped2,
+             mapping=aes(x=LONGITUDE,y=LATITUDE,
+                         color=CRITICAL_MINERAL,size=population)) +
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle("Place Populations within 35-mile Buffer")
+
+ggplotly(mapPlacePop2)
 ```
 
 
-```{r}
-map3 <- ggplot() + 
-  geom_polygon(data=state, #add base map
+```{r testmapFunction}
+
+mappingMines(minesKeyMinerals,place,56327,"pop","sum")
+
+```
+
+
+
+
+
+
+
+
+
+
+```{r minesMap}
+
+###############################################
+###############MAP OF MINES#################
+###############################################
+
+minesMap <- ggplot() + 
+  geom_polygon(data=base, #add base map
                color = "black", 
                fill="white",
                aes(x=long, y=lat, group=group)) + 
@@ -126,50 +292,429 @@ map3 <- ggplot() +
         axis.title.y=element_blank(), 
         axis.text.y=element_blank(), 
         axis.ticks.y=element_blank()) + 
-  ggtitle('"Critical Mineral" Mines & Deposits in U.S.:<br>Cobalt, Lithium, Tellurium, Rare Earths') +
+  ggtitle("Key Mineral Deposits & Mines") +
   coord_fixed(1.3) #adjust aspect ratio
 
-ggplotly(map3, tooltip="text") %>% #make interactive
+ggplotly(minesMap, tooltip="text") %>% #make interactive
   style(hoverinfo="none", traces=1)
 ```
+ 
+```{r minesMapPlaces2}
 
-```{r}
-map4 <- ggplot() +
-  geom_sf(data=county, #add base map
-               color = NA,
-               aes(fill=estimate)) +
-  coord_sf()+
-  scale_fill_viridis_c(option = "magma") +
+###############################################
+######MAP OF MINES + BUFFER + COUNTIES######
+###############################################
+
+minesMapPlaces2 <- ggplot() +
+  geom_sf(data=place)+#,aes(text=place))+ #add base map
   geom_point(data=minesKeyMinerals, #add mines
-             aes(x=LONGITUDE, y=LATITUDE, color=CRITICAL_MINERAL,
-                 text=paste("",CRITICAL_MINERAL))) +
+             aes(x=LONGITUDE, y=LATITUDE,
+                 color=CRITICAL_MINERAL, text=paste("",CRITICAL_MINERAL))) +
+  geom_sf(data=buffer, fill=NA, linetype="dotted",color="black")+ #fill=alpha(0.5)
   theme_minimal()+ #remove grey background
-  #theme(legend.position="none", #remove legend, axes labels/ticks
-        # axis.title.x=element_blank(),
-        # axis.text.x=element_blank(),
-        # axis.ticks.x=element_blank(),
-        # axis.title.y=element_blank(),
-        # axis.text.y=element_blank(),
-        # axis.ticks.y=element_blank()) +
-  ggtitle('"Critical Mineral" Mines & Deposits in U.S.:<br>Cobalt, Lithium, Tellurium, Rare Earths')
- # coord_fixed(1.3) #adjust aspect ratio
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle("Key Minerals w/ 35-mile Buffer over Counties")
 
-ggplotly(map4, tooltip="text") %>% #make interactive
-  style(hoverinfo="none", traces=1)
+ggplotly(minesMapPlaces2) #make interactive
 ```
 
+```{r minesMapPlaceCentroids_buffer2}
 
-```{r buffer}
-buf50km <- st_buffer(minesKeyMinerals, dist = 0.5)
+###############################################
+######MAP OF CENSUS PLACE CENTROIDS IN BUFFER
+###############################################
 
-map5 <- ggplot() +
-  geom_sf(data=county)+ #add base map
-  geom_sf(data=buf50km, linetype="dotted", color="blue", fill=NA)+ #fill=alpha(0.5)
-  coord_sf()+
+placeCentroid2 <- place %>%
+  st_centroid()
+
+intersectCentroid2 <- st_intersection(placeCentroid2, buffer)
+
+minesMapPlaceCentroids_buffer2 <- ggplot() +
+  geom_polygon(data=base, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_sf(data=intersectCentroid2, color="black") + #add mines+
   geom_point(data=minesKeyMinerals, #add mines
              aes(x=LONGITUDE, y=LATITUDE,
                  color=CRITICAL_MINERAL,
-               text=paste("",CRITICAL_MINERAL))) +
+                 text=paste("",CRITICAL_MINERAL))) +
+  geom_sf(data=buffer, fill=NA,
+          linetype="dotted",color="grey")+ #fill=alpha(0.5)
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle("Centroids of Census-designated Places within 35-mile Buffer")
+
+ggplotly(minesMapPlaceCentroids_buffer2)
+```
+
+
+
+```{r mapPlacePop2}
+
+###############################################
+######MAP OF TOTAL PLACE POPS IN BUFFER
+###############################################
+
+centroidsTotalGrouped2 <- intersectCentroid2 %>%
+  group_by(CRITICAL_MINERAL,DEPOSIT_NAME) %>%
+  summarize(population=sum(pop)) %>%
+  st_centroid()
+
+mapPlacePop2 <- ggplot() +
+  geom_polygon(data=base, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_sf(centroidsTotalGrouped2,
+          mapping=aes(color=CRITICAL_MINERAL,size=population)) +
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle("Place Populations within 35-mile Buffer")
+
+ggplotly(mapPlacePop2)
+```
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+```{r minesMap_buffer_counties}
+
+###############################################
+######MAP OF MINES + BUFFER + COUNTIES######
+###############################################
+
+minesMap_buffer_counties <- ggplot() +
+  geom_sf(data=county)+ #add base map
+  geom_point(data=minesKeyMinerals, #add mines
+             aes(x=LONGITUDE, y=LATITUDE,
+                 color=CRITICAL_MINERAL, text=paste("",CRITICAL_MINERAL))) +
+  geom_sf(data=buffer, fill=NA, linetype="dotted",color="black")+ #fill=alpha(0.5) 
+ # coord_sf(crs = st_crs(buffer))+
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle("Key Minerals w/ 35-mile Buffer over Counties")
+
+ggplotly(minesMap_buffer_counties, tooltip="text") %>% #make interactive
+  style(hoverinfo="none", traces=1)
+
+```
+
+
+```{r select_counties_in_buffer}
+
+###############################################
+######SELECT COUNTIES IN BUFFER######
+###############################################
+
+intersect <- st_intersection(county, buffer) %>%
+  sf::st_cast("MULTIPOLYGON")
+
+mapMines_cropCounties_buffer <- ggplot() +
+  geom_polygon(data=base, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_point(data=minesKeyMinerals, #add mines
+             aes(x=LONGITUDE, y=LATITUDE,
+                 color=CRITICAL_MINERAL, text=paste("",CRITICAL_MINERAL))) +
+  geom_sf(data=intersect)+ #fill=alpha(0.5) 
+ # coord_sf(crs = st_crs(buffer))+
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle("Select Counties in 35-mile Buffer")
+
+ggplotly(mapMines_cropCounties_buffer)
+
+
+
+
+fullCounties_buffer <- county %>%
+  filter(GEOID %in% intersect$GEOID)
+
+mapMines_fullCounties_buffer <- ggplot() +
+  geom_polygon(data=base, #add base map
+               color = "grey94", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_sf(data=fullCounties_buffer,color="black")+ 
+  geom_point(data=minesKeyMinerals, #add mines
+             aes(x=LONGITUDE, y=LATITUDE,
+                 color=CRITICAL_MINERAL, text=paste("",CRITICAL_MINERAL))) +
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle("Select Counties in 35-mile Buffer")
+
+ggplotly(mapMines_fullCounties_buffer)
+
+```
+
+
+```{r mapCountyPop}
+
+###############################################
+######MAP OF TOTAL COUNTY POPS IN BUFFER
+###############################################
+
+countiesTotalGrouped <- intersect %>% #counties + buffer intersect
+  group_by(CRITICAL_MINERAL,DEPOSIT_NAME) %>% #group by deposit  
+  summarize(population=sum(pop)) %>% #aggregate pop in buffer
+  st_centroid()
+
+mapCountyPop <- ggplot() +
+  geom_polygon(data=base, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_sf(countiesTotalGrouped, mapping=aes(color=CRITICAL_MINERAL,size=population)) +
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle("County Populations within 35-mile Buffer")
+
+ggplotly(mapCountyPop) #, tooltip="text") %>% #make interactive
+  #style(hoverinfo="none", traces=1)
+
+
+
+
+mapMines_fullCountiesPop <- ggplot() +
+  geom_polygon(data=base, #add base map
+               color = "grey94", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_sf(data=fullCounties_buffer,aes(fill=pop))+
+  #scale_fill_viridis_c(option = "magma") +
+  scale_fill_distiller(palette="OrRd",breaks = breaks_pretty(n = 15))+
+  geom_point(data=minesKeyMinerals, #add mines
+             aes(x=LONGITUDE, y=LATITUDE,
+                 color=CRITICAL_MINERAL, text=paste("",CRITICAL_MINERAL))) +
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle("Select Counties in 35-mile Buffer")
+
+ggplotly(mapMines_fullCountiesPop)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ ```{r minesMapPlaces}
+
+###############################################
+######MAP OF MINES + BUFFER + COUNTIES######
+###############################################
+
+minesMapPlaces <- ggplot() +
+  geom_sf(data=place_pop)+#,aes(text=place))+ #add base map
+  geom_point(data=minesKeyMinerals, #add mines
+             aes(x=LONGITUDE, y=LATITUDE,
+                 color=CRITICAL_MINERAL, text=paste("",CRITICAL_MINERAL))) +
+  geom_sf(data=buffer, fill=NA, linetype="dotted",color="black")+ #fill=alpha(0.5)
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle("Key Minerals within 35-mile Buffer over Counties")
+
+ggplotly(minesMapPlaces) #make interactive
+```
+
+
+```{r minesMapPlaceCentroids_buffer}
+
+###############################################
+######MAP OF CENSUS PLACE CENTROIDS IN BUFFER
+###############################################
+
+placeCentroid <- place_pop %>%
+  st_centroid()
+
+intersectCentroid <- st_intersection(placeCentroid, buffer)
+
+minesMapPlaceCentroids_buffer <- ggplot() +
+  geom_polygon(data=base, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_sf(data=intersectCentroid, color="black") + #add mines+
+  geom_point(data=minesKeyMinerals, #add mines
+             aes(x=LONGITUDE, y=LATITUDE,
+                 color=CRITICAL_MINERAL,
+                 text=paste("",CRITICAL_MINERAL))) +
+  geom_sf(data=buffer, fill=NA,
+          linetype="dotted",color="grey")+ #fill=alpha(0.5)
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle("Centroids of Census-designated Places within 35-mile Buffer")
+
+ggplotly(minesMapPlaceCentroids_buffer)
+```
+
+
+
+```{r mapPlacePop}
+
+###############################################
+######MAP OF TOTAL PLACE POPS IN BUFFER
+###############################################
+
+centroidsTotalGrouped <- intersectCentroid %>%
+  group_by(CRITICAL_MINERAL,DEPOSIT_NAME) %>%
+  summarize(population=sum(pop)) %>%
+  st_centroid()
+
+mapPlacePop <- ggplot() +
+  geom_polygon(data=base, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_sf(centroidsTotalGrouped,
+          mapping=aes(color=CRITICAL_MINERAL,size=population)) +
+  theme_minimal()+ #remove grey background
+  theme(legend.position="none", #remove legend, axes labels/ticks
+        axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle("Place Populations within 35-mile Buffer")
+
+ggplotly(mapPlacePop)
+```
+ 
+ 
+
+```{r places}
+intersectPlaces <- st_intersection(place_pop, buffer)
+
+intersectPlacesGrouped <- intersectPlaces %>%
+  group_by(CRITICAL_MINERAL,DEPOSIT_NAME)
+
+placesTotalGrouped <- intersectPlacesGrouped %>%
+  summarize(population=sum(pop)) %>%
+  st_centroid()
+
+map8 <- ggplot() +
+  geom_polygon(data=base, #add base map
+               color = "black", 
+               fill="white",
+               aes(x=long, y=lat, group=group)) + 
+  geom_sf(placesTotalGrouped, mapping=aes(color=CRITICAL_MINERAL,size=population)) +
   theme_minimal()+ #remove grey background
   theme(legend.position="none", #remove legend, axes labels/ticks
         axis.title.x=element_blank(),
@@ -180,11 +725,34 @@ map5 <- ggplot() +
         axis.ticks.y=element_blank()) +
   ggtitle('"Critical Mineral" Mines & Deposits in U.S.:<br>Cobalt, Lithium, Tellurium, Rare Earths')
 
-ggplotly(map5, tooltip="text") %>% #make interactive
+ggplotly(map8)
+```
+
+```{r minesMap_income_US}
+
+###############################################
+#######MAP OF MINES + INCOME BY COUNTY######
+###############################################
+
+minesMap_income_US <- ggplot() +
+  geom_sf(data=county, #add base map
+               color = NA,
+               aes(fill=medIncome)) +
+  coord_sf()+
+  scale_fill_viridis_c(option = "magma") +
+  geom_point(data=minesKeyMinerals, #add mines
+             aes(x=LONGITUDE, y=LATITUDE, color=CRITICAL_MINERAL,
+                 text=paste("",CRITICAL_MINERAL))) +
+  theme_minimal()+ #remove grey background
+  # theme(legend.position="none", #remove legend, axes labels/ticks
+  # axis.title.x=element_blank(),
+  # axis.text.x=element_blank(),
+  # axis.ticks.x=element_blank(),
+  # axis.title.y=element_blank(),
+  # axis.text.y=element_blank(),
+  # axis.ticks.y=element_blank()) +
+  ggtitle("Key Mineral Deposits & Mines by Income")
+
+ggplotly(minesMap_income_US, tooltip="text") %>% #make interactive
   style(hoverinfo="none", traces=1)
 ```
-```{r select_counties}
-intersect <- st_intersection(county, buf50km)
-```
- 
-

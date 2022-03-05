@@ -402,3 +402,9 @@ raster::plot(filtered_data, col = 10, add = T)
 
 raster::plot(npp_avg_stack[[1]], main = "Suitable Lumpsucker Habitat over Average SST (C)", xlab = "(m)", ylab = "(m)")
 raster::plot(filtered_data, col = 10, add = T)
+
+
+
+
+
+################ECOLOGICAL FORECASTING
